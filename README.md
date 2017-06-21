@@ -12,5 +12,5 @@ $ pip install trios
 ```
 
 ## Getting started
-The notebook in X shows a simple example on how to use this Deep TRIOS.
+This (Notebook)[cnn_trioslib.ipynb] shows an example on how to use DeepTRIOS for text segmentation.
 

@@ -131,8 +131,6 @@ class CNN_TFClassifier():
 		return self.last_epoch(file_path) < 1
 
 	def predict(self, x):
-		file_path = self.model_dir + '/training.txt'
-		last_model_epoch = self.last_epoch(file_path)
 		if self.is_fitted():
 			print('Model is still not fitted.')
 			return None
@@ -141,8 +139,6 @@ class CNN_TFClassifier():
 			x_, y_, keep_prob, cross_entropy, y_conv, y_conv_prob = self.prepare_graph()
 			session = tf.InteractiveSession()
 			self.restore_model(session)
-
-			sliceResults = []
 			sliceSize = 50
 			numSlices = math.ceil(float(x.shape[0]) / sliceSize)
 			outputs = np.zeros((x.shape[0], self.num_outputs), dtype=np.float64)
@@ -150,7 +146,7 @@ class CNN_TFClassifier():
 				first = i * sliceSize
 				last = min(x.shape[0], (i + 1) * sliceSize)
 				outputs[first:last] = y_conv_prob.eval(feed_dict = {x_: x[first:last, :], keep_prob: 1.0})
-			return outputs
+			return outputs >= 0.5
 
 
 	def evaluate(self, X, y, imagesPlaceholder, labelsPlaceholder, keepProbPlaceholder, y_output):
