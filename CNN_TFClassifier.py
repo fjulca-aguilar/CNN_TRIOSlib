@@ -22,6 +22,10 @@ class CNN_TFClassifier():
 		self.patience = patience
 		self.output_activation = output_activation
 		self.conv_strides = conv_strides
+		self.graph_path = os.path.join(model_dir, 'graph')
+		self.training_path = os.path.join(model_dir, 'training')
+		self.validation_path = os.path.join(model_dir, 'validation')
+		self.model_path = os.path.join(self.graph_path, 'model.ckpt')
 
 
 	def prepare_graph(self):
@@ -60,10 +64,10 @@ class CNN_TFClassifier():
 		y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
 		
 		if self.output_activation == 'sigmoid':
-			cross_entropy = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_conv, y_))
+			cross_entropy = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_, logits=y_conv))
 			y_conv_prob = tf.sigmoid(y_conv)
 		else:
-			cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_conv, y_))
+			cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=y_conv))
 			y_conv_prob = tf.nn.softmax(y_conv)
 		wrong_prediction = tf.not_equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
 		MAE = tf.reduce_mean(tf.cast(wrong_prediction, tf.float32))
@@ -79,49 +83,66 @@ class CNN_TFClassifier():
 			session = tf.InteractiveSession()
 			indices = list(range(x.shape[0]))
 			num_mini_batchs = math.floor(x.shape[0] / self.batch_size)
-			train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(cross_entropy)
-			
-			file_path = self.model_dir + '/training.txt'
-			last_model_epoch = self.last_epoch(file_path)
-			start_index = last_model_epoch + 1
+			global_step = tf.Variable(0, name='global_step', trainable=False)
+			train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(cross_entropy, global_step=global_step)
+						
+			# file_path = self.model_dir + '/training.txt'
+			# last_model_epoch = self.last_epoch(file_path)
+			# start_index = 1
 			max_accuracy = -1.
-			if last_model_epoch >= 1:
-				self.restore_model(session)
-				max_accuracy = self.evaluate(x_val, y_val, x_, y_, keep_prob, y_conv_prob)
-			else:
-				session.run(tf.initialize_all_variables())
+			# if last_model_epoch >= 1:
+			# 	self.restore_model(session)
+			# 	max_accuracy = self.evaluate(x_val, y_val, x_, y_, keep_prob, y_conv_prob)
+			# else:
+			# 	session.run(tf.initialize_all_variables())
+			session.run(tf.initialize_all_variables())
 
-			if not os.path.exists(file_path):
-				append_to_file(file_path, 'epoch\ttrain_cost\ttrain_acc\tval_acc\n')
+			# if not os.path.exists(file_path):
+			# 	append_to_file(file_path, 'epoch\ttrain_cost\ttrain_acc\tval_acc\n')
 				
-			print('Start training from epoch %d' % start_index)
+			# print('Start training from epoch %d' % start_index)
 			# correct_prediction = tf.equal(tf.argmax(tf.y_conv.eval(feed_dict = {x_: x_val, keep_prob: 1.0}), 1), np.argmax(y_val, 1))
 			# val_accuracy = tf.reduce_mean(correct_prediction)
 			updating_counter = 0
-			for epoch in range(start_index, self.num_epochs + 1):
+			accuracy_value = tf.placeholder(tf.float32, shape=())
+			epoch_cost = tf.placeholder(tf.float32, shape=())
+			acc_summary = tf.summary.scalar('accuracy' , accuracy_value)
+			cost_summary = tf.summary.scalar('cost', epoch_cost)	
+			graph_writer = tf.summary.FileWriter(self.graph_path, g)
+			train_writer = tf.summary.FileWriter(self.training_path)
+			val_writer = tf.summary.FileWriter(self.validation_path)
+			train_merged = tf.summary.merge([cost_summary, acc_summary])
+			saver = tf.train.Saver(max_to_keep=1)
+
+			for epoch in range(1, self.num_epochs + 1):
 				indices = np.random.permutation(indices)
-				epochCost = []
+				temp_cost = []
 				for i in range(num_mini_batchs):
 					first = i * self.batch_size
 					last = (i + 1) * self.batch_size
 					selctedIndices = indices[first : last]
-					_, batchCost = session.run([train_step, cross_entropy], feed_dict={x_: x[selctedIndices, :],\
+					_, batch_cost = session.run([train_step, cross_entropy], feed_dict={x_: x[selctedIndices, :],\
 					y_: y[selctedIndices], keep_prob: self.dropout_prob})
-					epochCost.append(batchCost) 
+					temp_cost.append(batch_cost) 
 				print('epoch %d finished' % epoch)
-				mean_cost = np.mean(epochCost)
 				epoch_train_accuracy = self.evaluate(x, y, x_, y_, keep_prob, y_conv_prob)
 				epoch_val_accuracy = self.evaluate(x_val, y_val, x_, y_, keep_prob, y_conv_prob)
+				train_summary = session.run(train_merged, 
+					feed_dict={epoch_cost: np.mean(temp_cost), accuracy_value: epoch_train_accuracy})
+				val_summary = session.run(acc_summary, 
+					feed_dict={accuracy_value: epoch_val_accuracy})
+				train_writer.add_summary(train_summary, epoch)
+				train_writer.flush()				
+				val_writer.add_summary(val_summary, epoch)
+				val_writer.flush()
 
-				print("training accuracy: %f --- validation accuracy: %f " % (epoch_train_accuracy, epoch_val_accuracy))
-				# tf.summary.scalar('val_accuracy', epoch_train_accuracy)
 				if epoch_val_accuracy > max_accuracy:
-					self.save_model(session)
+					saver.save(session, self.model_path, global_step=global_step)
 					max_accuracy = epoch_val_accuracy
 					updating_counter = 0
 				else:
 					updating_counter += 1
-				append_to_file(file_path, '%d\t%f\t%f\t%f\n' % (epoch, mean_cost, epoch_train_accuracy, epoch_val_accuracy))
+				# append_to_file(file_path, '%d\t%f\t%f\t%f\n' % (epoch, mean_cost, epoch_train_accuracy, epoch_val_accuracy))
 				if updating_counter >= self.patience:
 					break
 		return max_accuracy
@@ -145,7 +166,7 @@ class CNN_TFClassifier():
 			for i in range(numSlices):
 				first = i * sliceSize
 				last = min(x.shape[0], (i + 1) * sliceSize)
-				outputs[first:last] = y_conv_prob.eval(feed_dict = {x_: x[first:last, :], keep_prob: 1.0})
+				outputs[first:last] = y_conv_prob.eval(feed_dict={x_: x[first:last, :], keep_prob: 1.0})
 			return outputs >= 0.5
 
 
@@ -166,11 +187,11 @@ class CNN_TFClassifier():
 			correct_prediction = np.argmax(outputs, 1) == np.argmax(y, 1)
 			return np.mean(correct_prediction, dtype=np.float64)
 			
-	def save_model(self, session):
-		if not os.path.exists(self.model_dir):
-			os.makedirs(self.model_dir)
-		saver = tf.train.Saver()
-		saver.save(session, '%s/model.ckpt' % self.model_dir)
+	# def save_model(self, session):
+	# 	if not os.path.exists(self.model_dir):
+	# 		os.makedirs(self.model_dir)
+	# 	saver = tf.train.Saver()
+	# 	saver.save(session, '%s/model.ckpt' % self.model_dir)
 
 	def restore_model(self, session):
 		saver = tf.train.Saver()
