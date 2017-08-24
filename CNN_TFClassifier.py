@@ -86,23 +86,9 @@ class CNN_TFClassifier():
 			global_step = tf.Variable(0, name='global_step', trainable=False)
 			train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(cross_entropy, global_step=global_step)
 						
-			# file_path = self.model_dir + '/training.txt'
-			# last_model_epoch = self.last_epoch(file_path)
-			# start_index = 1
 			max_accuracy = -1.
-			# if last_model_epoch >= 1:
-			# 	self.restore_model(session)
-			# 	max_accuracy = self.evaluate(x_val, y_val, x_, y_, keep_prob, y_conv_prob)
-			# else:
-			# 	session.run(tf.initialize_all_variables())
 			session.run(tf.initialize_all_variables())
 
-			# if not os.path.exists(file_path):
-			# 	append_to_file(file_path, 'epoch\ttrain_cost\ttrain_acc\tval_acc\n')
-				
-			# print('Start training from epoch %d' % start_index)
-			# correct_prediction = tf.equal(tf.argmax(tf.y_conv.eval(feed_dict = {x_: x_val, keep_prob: 1.0}), 1), np.argmax(y_val, 1))
-			# val_accuracy = tf.reduce_mean(correct_prediction)
 			updating_counter = 0
 			accuracy_value = tf.placeholder(tf.float32, shape=())
 			epoch_cost = tf.placeholder(tf.float32, shape=())
@@ -142,14 +128,12 @@ class CNN_TFClassifier():
 					updating_counter = 0
 				else:
 					updating_counter += 1
-				# append_to_file(file_path, '%d\t%f\t%f\t%f\n' % (epoch, mean_cost, epoch_train_accuracy, epoch_val_accuracy))
 				if updating_counter >= self.patience:
 					break
 		return max_accuracy
 
 	def is_fitted(self):
-		file_path = self.model_dir + '/training.txt'
-		return self.last_epoch(file_path) < 1
+		return tf.train.checkpoint_exists(self.model_path)
 
 	def predict(self, x):
 		if self.is_fitted():
@@ -159,7 +143,8 @@ class CNN_TFClassifier():
 		with g.as_default():
 			x_, y_, keep_prob, cross_entropy, y_conv, y_conv_prob = self.prepare_graph()
 			session = tf.InteractiveSession()
-			self.restore_model(session)
+			saver = tf.train.Saver()
+			saver.restore(session, tf.train.latest_checkpoint(self.graph_path))
 			sliceSize = 50
 			numSlices = math.ceil(float(x.shape[0]) / sliceSize)
 			outputs = np.zeros((x.shape[0], self.num_outputs), dtype=np.float64)
@@ -186,24 +171,6 @@ class CNN_TFClassifier():
 		else:
 			correct_prediction = np.argmax(outputs, 1) == np.argmax(y, 1)
 			return np.mean(correct_prediction, dtype=np.float64)
-			
-	# def save_model(self, session):
-	# 	if not os.path.exists(self.model_dir):
-	# 		os.makedirs(self.model_dir)
-	# 	saver = tf.train.Saver()
-	# 	saver.save(session, '%s/model.ckpt' % self.model_dir)
-
-	def restore_model(self, session):
-		saver = tf.train.Saver()
-		saver.restore(session, ('%s/model.ckpt' % self.model_dir))
-
-	def last_epoch(self, file_path):
-		if os.path.exists(file_path):
-			num_lines = sum(1 for line in open(file_path))
-			if num_lines > 1:
-				mat = np.loadtxt(file_path, delimiter='\t', skiprows = 1, ndmin=2)
-				return int(mat[mat.shape[0] - 1, 0])
-		return 0
 
 	def weight_variable(self, shape):
 		initial = tf.truncated_normal(shape, stddev = 0.1)
@@ -220,7 +187,3 @@ class CNN_TFClassifier():
 	def max_pool_2x2(self, x):
 		return tf.nn.max_pool(x, ksize = [1, 2, 2, 1], 
 			strides = [1, 2, 2, 1], padding = 'SAME')
-
-def append_to_file(file_path, text):
-	with open(file_path, 'a') as file:
-		file.write(text)
