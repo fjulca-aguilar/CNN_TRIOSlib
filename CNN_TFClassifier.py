@@ -29,7 +29,6 @@ class CNN_TFClassifier():
 
 
 	def prepare_graph(self):
-		imageSize = self.input_shape[0] * self.input_shape[1]
 
 		with tf.name_scope("data"):
 			x_ = tf.placeholder(tf.float32, shape=[None, self.input_shape[0], 
@@ -69,15 +68,15 @@ class CNN_TFClassifier():
 		with tf.name_scope("fc2"):
 			W_fc2 = self.weight_variable([num_fully_connected, self.num_outputs], name="weight4")
 			b_fc2 = self.bias_variable([self.num_outputs], name="bias4")
-			y_conv = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
+			logits = tf.matmul(h_fc1_drop, W_fc2) + b_fc2
 
 		with tf.name_scope("loss"):
 			if self.output_activation == 'sigmoid':
-				cross_entropy = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_, logits=y_conv))
-				y_conv_prob = tf.sigmoid(y_conv)
+				cross_entropy = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y_, logits=logits))
+				y_conv_prob = tf.sigmoid(logits)
 			else:
-				cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=y_conv))
-				y_conv_prob = tf.nn.softmax(y_conv)
+				cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=logits))
+				y_conv_prob = tf.nn.softmax(logits)
 
 		with tf.name_scope("optimizer"):
 			global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -98,6 +97,7 @@ class CNN_TFClassifier():
 	def fit(self, x, y, x_val, y_val):
 		if not os.path.exists(self.model_dir):
 			os.makedirs(self.model_dir)
+
 		g = tf.Graph()
 		with g.as_default():
 			net = self.prepare_graph()
@@ -113,7 +113,7 @@ class CNN_TFClassifier():
 			indices = list(range(x.shape[0]))
 			num_mini_batchs = math.floor(x.shape[0] / self.batch_size)
 			max_accuracy = -1.
-			session.run(tf.initialize_all_variables())
+			session.run(tf.global_variables_initializer())
 
 			updating_counter = 0
 			accuracy_value = tf.placeholder(tf.float32, shape=())
