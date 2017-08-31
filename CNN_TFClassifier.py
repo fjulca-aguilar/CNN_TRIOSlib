@@ -159,10 +159,10 @@ class CNN_TFClassifier():
 		return max_accuracy
 
 	def is_fitted(self):
-		return tf.train.checkpoint_exists(self.model_path)
+		return tf.train.checkpoint_exists(self.graph_path)
 
 	def predict(self, x):
-		if self.is_fitted():
+		if not self.is_fitted():
 			print('Model is still not fitted.')
 			return None
 		g = tf.Graph()
